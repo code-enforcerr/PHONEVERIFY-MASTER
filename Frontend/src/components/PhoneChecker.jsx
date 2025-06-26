@@ -1,13 +1,16 @@
-import { useState, useCallback, useEffect } from "react";  // Added useEffect
+import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import axios from "axios";
 
 export default function PhoneChecker() {
   const [file, setFile] = useState(null);
+  const [fileNumbers, setFileNumbers] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [progress, setProgress] = useState(0);
+  const [total, setTotal] = useState(0);
 
-  // Load results from localStorage on component mount
   useEffect(() => {
     const saved = localStorage.getItem("verificationResults");
     if (saved) {
@@ -17,7 +20,27 @@ export default function PhoneChecker() {
 
   const onDrop = useCallback((acceptedFiles) => {
     if (acceptedFiles.length) {
-      setFile(acceptedFiles[0]);
+      const uploadedFile = acceptedFiles[0];
+      setFile(uploadedFile);
+      setProgress(0);
+      setResults([]);
+      setErrorMsg("");
+      setTotal(0);
+      setFileNumbers([]);
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target.result;
+        const lines = text
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+
+        const uniqueNumbers = Array.from(new Set(lines));
+        setFileNumbers(uniqueNumbers);
+        setTotal(uniqueNumbers.length);
+      };
+      reader.readAsText(uploadedFile);
     }
   }, []);
 
@@ -31,20 +54,41 @@ export default function PhoneChecker() {
   });
 
   const handleUpload = async () => {
-    if (!file) return;
-    setLoading(true);
-    const formData = new FormData();
-    formData.append("numbers", file);
+    if (!fileNumbers.length) return;
 
-    try {
-      const res = await axios.post("http://localhost:3001/api/upload", formData);
-      setResults(res.data.results);
-      localStorage.setItem("verificationResults", JSON.stringify(res.data.results));  // Save to localStorage
-    } catch (err) {
-      alert("Upload failed");
-    } finally {
-      setLoading(false);
+    setLoading(true);
+    setErrorMsg("");
+    setResults([]);
+    setProgress(0);
+    setTotal(fileNumbers.length);
+
+    const verified = [];
+
+    for (let i = 0; i < fileNumbers.length; i++) {
+      const number = fileNumbers[i];
+
+      try {
+        const res = await axios.get("http://localhost:3001/api/verify-one", {
+          params: { number },
+        });
+        verified.push(res.data);
+      } catch (err) {
+        verified.push({
+          number,
+          type: "error",
+          carrier: "error",
+          valid: false,
+          error: err.message,
+        });
+      }
+
+      setProgress((prev) => prev + 1);
+      await new Promise((resolve) => setTimeout(resolve, 300));
     }
+
+    setResults(verified);
+    localStorage.setItem("verificationResults", JSON.stringify(verified));
+    setLoading(false);
   };
 
   const handleDownload = (type) => {
@@ -54,9 +98,13 @@ export default function PhoneChecker() {
     window.open(url, "_blank");
   };
 
-  // New clear results function
   const clearResults = () => {
+    setFile(null);
     setResults([]);
+    setProgress(0);
+    setTotal(0);
+    setErrorMsg("");
+    setFileNumbers([]);
     localStorage.removeItem("verificationResults");
   };
 
@@ -64,12 +112,11 @@ export default function PhoneChecker() {
   const unknowns = results.filter((r) => !["mobile", "landline", "voip"].includes(r.type));
 
   return (
-    <div className="space-y-8 font-luxury text-slate-800">
-      {/* Upload area */}
+    <div className="space-y-8 font-luxury text-slate-800 max-w-4xl mx-auto p-4">
       <div
         {...getRootProps()}
         className={`transition border-2 border-dashed rounded-3xl p-10 text-center
-          ${isDragActive ? "border-indigo-500" : "border-white"} cursor-pointer`}
+          ${isDragActive ? "border-indigo-500" : "border-gray-300"} cursor-pointer`}
       >
         <input {...getInputProps()} />
         <p className="text-lg">
@@ -82,16 +129,50 @@ export default function PhoneChecker() {
         )}
       </div>
 
-      {/* Buttons */}
-      <div className="flex flex-wrap gap-4 justify-center">
+      <div className="text-center text-sm text-gray-600">
+        <strong>{fileNumbers.length}</strong> numbers ready for verification
+      </div>
+
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
         <button
           onClick={handleUpload}
-          disabled={loading || !file}
-          className="bg-indigo-700 hover:bg-indigo-800 text-white px-6 py-2 rounded-full font-semibold tracking-wide shadow hover:shadow-md disabled:opacity-40 transition"
+          disabled={loading || !fileNumbers.length}
+          className="bg-indigo-500 hover:bg-indigo-600 text-white px-8 py-3 rounded-full font-semibold tracking-wide shadow hover:shadow-md disabled:opacity-40 transition"
         >
-          {loading ? "⏳ Verifying..." : "Upload & Verify"}
+          Start Verification
         </button>
+      </div>
 
+      {fileNumbers.length > 0 && !loading && (
+        <div className="max-h-48 overflow-y-auto border rounded p-4 bg-gray-50 text-sm text-slate-700 space-y-1 custom-scrollbar mt-4">
+          {fileNumbers.map((num, idx) => (
+            <div key={idx} className="truncate">{num}</div>
+          ))}
+        </div>
+      )}
+
+      {loading && (
+        <div className="text-center">
+          <p className="text-indigo-600 font-semibold mb-2">⏳ Verifying numbers...</p>
+          <progress value={progress} max={total} className="w-full h-2 rounded" />
+          <p className="text-sm text-gray-500 mt-1">
+            Verified {progress} of {total}
+          </p>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="text-red-600 font-medium text-center">{errorMsg}</div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <NumberGroup title="📱 Mobile" color="emerald" data={categorize("mobile")} />
+        <NumberGroup title="☎️ Landline" color="blue" data={categorize("landline")} />
+        <NumberGroup title="💻 VoIP" color="purple" data={categorize("voip")} />
+        <NumberGroup title="❓ Unknown/Error" color="rose" data={unknowns} />
+      </div>
+
+      <div className="flex flex-wrap gap-4 justify-center mt-6">
         <button
           onClick={() => handleDownload("mobile")}
           disabled={!categorize("mobile").length}
@@ -108,37 +189,38 @@ export default function PhoneChecker() {
           Download Landline
         </button>
 
-        {/* Clear results button */}
         <button
           onClick={clearResults}
-          disabled={!results.length}
-          className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full font-semibold tracking-wide shadow hover:shadow-md disabled:opacity-40 transition"
+          className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full font-semibold tracking-wide shadow hover:shadow-md transition"
         >
-          🗑️ Clear Results
+          🗑️ Clear
         </button>
-      </div>
-
-      {/* Results grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <NumberGroup title="📱 Mobile" color="emerald" data={categorize("mobile")} />
-        <NumberGroup title="☎️ Landline" color="blue" data={categorize("landline")} />
-        <NumberGroup title="💻 VoIP" color="purple" data={categorize("voip")} />
-        <NumberGroup title="❓ Unknown/Error" color="rose" data={unknowns} />
       </div>
     </div>
   );
 }
 
 function NumberGroup({ title, data, color }) {
+  const bgColor = {
+    emerald: 'bg-emerald-50 border-emerald-400 text-emerald-800',
+    blue: 'bg-blue-50 border-blue-400 text-blue-800',
+    purple: 'bg-purple-50 border-purple-400 text-purple-800',
+    rose: 'bg-rose-50 border-rose-400 text-rose-800',
+  }[color];
+
   return (
-    <div className={`bg-${color}-50 border-2 border-${color}-400 rounded-xl p-4 shadow-sm`}>
-      <h2 className={`text-${color}-800 text-lg font-bold mb-2`}>
+    <div className={`border-2 rounded-xl p-4 shadow-sm ${bgColor}`}>
+      <h2 className="text-lg font-bold mb-2">
         {title} <span className="text-sm font-normal">({data.length})</span>
       </h2>
       <div className="max-h-52 overflow-y-auto text-sm text-slate-700 space-y-1 custom-scrollbar pr-1">
-        {data.map((item, idx) => (
-          <div key={idx} className="truncate">{item.number}</div>
-        ))}
+        {data.length > 0 ? (
+          data.map((item, idx) => (
+            <div key={idx} className="truncate">{item.number}</div>
+          ))
+        ) : (
+          <div className="text-gray-400 italic">No numbers</div>
+        )}
       </div>
     </div>
   );
