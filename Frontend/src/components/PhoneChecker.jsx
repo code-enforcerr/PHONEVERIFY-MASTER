@@ -12,6 +12,7 @@ export default function PhoneChecker() {
   const [total, setTotal] = useState(0);
 
   const baseURL = import.meta.env.VITE_API_BASE;
+  const apiLimit = Number(import.meta.env.VITE_API_LIMIT) || 1300;
 
   useEffect(() => {
     const saved = localStorage.getItem("verificationResults");
@@ -56,6 +57,11 @@ export default function PhoneChecker() {
 
   const handleUpload = async () => {
     if (!fileNumbers.length) return;
+
+    if (fileNumbers.length > apiLimit) {
+      setErrorMsg(`❌ You may exceed your verification limit of ${apiLimit} numbers. Please upgrade your API plan.`);
+      return;
+    }
 
     setLoading(true);
     setErrorMsg("");
@@ -177,14 +183,14 @@ export default function PhoneChecker() {
 
       <div className="flex flex-wrap gap-4 justify-center mt-6">
         <button
-          onClick={() => window.open(`${import.meta.env.VITE_API_BASE}/api/download/mobile`, "_blank")}
+          onClick={() => window.open(`${baseURL}/api/download/mobile`, "_blank")}
           className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-full font-semibold tracking-wide shadow hover:shadow-md disabled:opacity-40 transition"
         >
           Download Mobile
         </button>
 
         <button
-          onClick={() => window.open(`${import.meta.env.VITE_API_BASE}/api/download/landline`, "_blank")}
+          onClick={() => window.open(`${baseURL}/api/download/landline`, "_blank")}
           className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-semibold tracking-wide shadow hover:shadow-md disabled:opacity-40 transition"
         >
           Download Landline
