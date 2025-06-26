@@ -11,11 +11,13 @@ const app = express();
 const upload = multer({ dest: 'uploads/' });
 
 app.use(cors());
+app.use(express.json()); 
 
 const NUMVERIFY_BASE = 'http://apilayer.net/api/validate';
 const API_KEY = process.env.NUMVERIFY_API_KEY;
 
 let lastResults = [];
+
 
 app.get('/api/verify-one', async (req, res) => {
   const raw = req.query.number;
@@ -71,7 +73,19 @@ app.get('/api/verify-one', async (req, res) => {
   }
 });
 
-// Download all results
+
+app.post('/api/save-results', (req, res) => {
+  const { results } = req.body;
+
+  if (!Array.isArray(results) || results.length === 0) {
+    return res.status(400).json({ error: 'No results received' });
+  }
+
+  lastResults = results;
+  res.json({ message: 'Results saved on server' });
+});
+
+
 app.get('/api/download', (req, res) => {
   if (!lastResults.length) {
     return res.status(400).json({ error: 'No results to download yet' });
@@ -86,7 +100,7 @@ app.get('/api/download', (req, res) => {
   res.send(csv);
 });
 
-// Download filtered results by type
+
 app.get('/api/download/:type', (req, res) => {
   const { type } = req.params;
 
@@ -108,6 +122,7 @@ app.get('/api/download/:type', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.send(csv);
 });
+
 
 app.listen(3001, () => {
   console.log('✅ Server running on http://localhost:3001');
