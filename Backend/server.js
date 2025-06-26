@@ -1,7 +1,6 @@
 const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
-const csvParser = require('csv-parser');
 const axios = require('axios');
 const cors = require('cors');
 const { Parser } = require('json2csv');
@@ -11,13 +10,24 @@ const app = express();
 const upload = multer({ dest: 'uploads/' });
 
 app.use(cors());
-app.use(express.json()); 
+app.use(express.json());
 
 const NUMVERIFY_BASE = 'http://apilayer.net/api/validate';
 const API_KEY = process.env.NUMVERIFY_API_KEY;
+const RESULTS_FILE = './results.json';
 
 let lastResults = [];
 
+
+if (fs.existsSync(RESULTS_FILE)) {
+  const saved = fs.readFileSync(RESULTS_FILE, 'utf8');
+  try {
+    lastResults = JSON.parse(saved);
+  } catch (e) {
+    console.error('❌ Failed to parse results.json:', e.message);
+    lastResults = [];
+  }
+}
 
 app.get('/api/verify-one', async (req, res) => {
   const raw = req.query.number;
@@ -82,9 +92,12 @@ app.post('/api/save-results', (req, res) => {
   }
 
   lastResults = results;
+
+  
+  fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
+
   res.json({ message: 'Results saved on server' });
 });
-
 
 app.get('/api/download', (req, res) => {
   if (!lastResults.length) {
@@ -99,7 +112,6 @@ app.get('/api/download', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.send(csv);
 });
-
 
 app.get('/api/download/:type', (req, res) => {
   const { type } = req.params;
@@ -122,7 +134,6 @@ app.get('/api/download/:type', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.send(csv);
 });
-
 
 app.listen(3001, () => {
   console.log('✅ Server running on http://localhost:3001');
